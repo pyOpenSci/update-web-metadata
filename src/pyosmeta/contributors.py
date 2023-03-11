@@ -1,14 +1,13 @@
 import json
-import ruamel.yaml
-import urllib.request
+
 import requests
+
+from .file_io import YamlIO
 
 # SOLID guidelines to improve code
 
 
-# TODO: a class should do one thing
-# i could potentially create a data opening / parser class and inherit here
-class ProcessContributors:
+class ProcessContributors(YamlIO):
     # When initializing how do you decide what should be an input
     # attribute vs just something a method accepted when called?
     def __init__(self, json_files: list, web_yml: str, API_TOKEN: str):
@@ -30,15 +29,6 @@ class ProcessContributors:
         self.API_TOKEN = API_TOKEN
         self.web_yml = web_yml
 
-    # Open the web contrib file (could also be a method)
-    # This returns a list of dict objects - whereas combine json returns a dict
-    # w gh users name as the key - it might be cleaner if both returned objects were
-    # similarly formatted
-    def _open_yml_file(self) -> dict:
-        """Description here"""
-        with urllib.request.urlopen(self.web_yml) as f:
-            return ruamel.yaml.safe_load(f)
-
     def _list_to_dict(self, aList: list) -> dict:
         """Takes a yaml file opened and turns into a dictionary
         The dict structure is key (gh_username) and then a dictionary
@@ -58,7 +48,7 @@ class ProcessContributors:
         This opens a website contrib yaml file and turns it in a
         dictionary
         """
-        yml_list = self._open_yml_file()
+        yml_list = self.open_yml_file(self.web_yml)
         return self._list_to_dict(yml_list)
 
     def process_json_file(self, json_file: str) -> dict:
@@ -68,7 +58,6 @@ class ProcessContributors:
         json file. Rename fields to match fields used in the website. Then
         add keys needed for the website.
 
-        # TODO: if you use types do you need a docstring still with params?
         Parameters
         ----------
         json_file : string
@@ -82,9 +71,6 @@ class ProcessContributors:
         processed_data = {}
         # Loop through each entry in the JSON file
         # TODO: SOLID - avoid massive structures with conditional statements
-        # TODO: if entry["login"] not in processed_data: change to
-        # if entry[] in processed data:
-        #     continue
         for entry in data["contributors"]:
             # Check if the login value is already in the dictionary
             if entry["login"] in processed_data:
@@ -103,12 +89,6 @@ class ProcessContributors:
             entry["github_image_id"] = entry.pop("avatar_url")
             # Add empty values for the new keys
             # TODO: Tuple - consumes less memory -- ("mastodon",
-            # "twitter",
-            # "bio",
-            # "orcidid",
-            # "contributor_type",
-            # "packages-submitted",
-            # "packages-reviewed",)
             for key in [
                 "mastodon",
                 "twitter",
@@ -125,7 +105,6 @@ class ProcessContributors:
             processed_data[entry["github_username"]] = entry
         return processed_data
 
-    # So here i think if i've instantiated the class with json files i can call it as self?
     def combine_json_data(self) -> dict:
         """Deserialize and clean a list of json file url's.
 
@@ -190,7 +169,9 @@ class ProcessContributors:
 
         user_data = {}
         # TODO this could be created via a loop with a key:value pair to iterate over
+        # I wonder if i can do this with a single .get()
         user_data[username] = {
+            "name": response_json.get("name", None),
             "location": response_json.get("location", None),
             "email": response_json.get("email", None),
             "twitter": response_json.get("twitter_username", None),
@@ -276,14 +257,13 @@ class ProcessContributors:
 
         for i, gh_name in enumerate(contrib_data.keys()):
             print(i, gh_name)
-            gh_name_lower = gh_name.lower()
             # Update the key:value pairs for data pulled from GitHub
             # Note that some data needs to be manual updated such as which
             # packages someone has reviewed.
             for akey in update_keys:
                 # Test if url works
                 if akey == "website":
-                    url = gh_data[gh_name_lower][gh_name_lower][akey]
+                    url = gh_data[gh_name][gh_name][akey]
                     # Fix the url format and check to see if it works online
                     url = self.format_url(url)
                     # It url is valid, add to dict
@@ -294,9 +274,7 @@ class ProcessContributors:
                         contrib_data[gh_name][akey] = ""
                 else:
                     # Stupid that the gh name is there twice
-                    contrib_data[gh_name][akey] = gh_data[gh_name_lower][gh_name_lower][
-                        akey
-                    ]
+                    contrib_data[gh_name][akey] = gh_data[gh_name][gh_name][akey]
         return contrib_data
 
     def format_url(self, url: str) -> str:
@@ -324,44 +302,45 @@ class ProcessContributors:
             print("fixing", url)
             return "https://" + url
 
-    def create_new_contrib_file(self, filename: str, contrib_data: dict):
-        """Update website contrib file with the information grabbed from GitHub
-        API
+    # Now inherited from write data class
+    # def create_new_contrib_file(self, filename: str, contrib_data: dict):
+    #     """Update website contrib file with the information grabbed from GitHub
+    #     API
 
-        Serialize contrib data from dictionary to YAML file.
+    #     Serialize contrib data from dictionary to YAML file.
 
-        Parameters
-        ----------
+    #     Parameters
+    #     ----------
 
-        filename : str
-            Name of the output contributor filename ().yml format)
-        contrib_data :  dict
-            A dict containing contributor data for the website.
+    #     filename : str
+    #         Name of the output contributor filename ().yml format)
+    #     contrib_data :  dict
+    #         A dict containing contributor data for the website.
 
-        Returns
-        -------
-        """
+    #     Returns
+    #     -------
+    #     """
 
-        with open(filename, "w") as file:
-            # Create YAML object with RoundTripDumper to keep key order intact
-            yaml = ruamel.yaml.YAML(typ="rt")
-            # Set the indent parameter to 2 for the yaml output
-            yaml.indent(mapping=4, sequence=4, offset=2)
-            yaml.dump(contrib_data, file)
+    #     with open(filename, "w") as file:
+    #         # Create YAML object with RoundTripDumper to keep key order intact
+    #         yaml = ruamel.yaml.YAML(typ="rt")
+    #         # Set the indent parameter to 2 for the yaml output
+    #         yaml.indent(mapping=4, sequence=4, offset=2)
+    #         yaml.dump(contrib_data, file)
 
-    def clean_yaml_file(self, filename):
-        """Open a yaml file and remove extra indent and spacing"""
-        with open(filename, "r") as f:
-            lines = f.readlines()
+    # def clean_yaml_file(self, filename):
+    #     """Open a yaml file and remove extra indent and spacing"""
+    #     with open(filename, "r") as f:
+    #         lines = f.readlines()
 
-        cleaned_lines = []
-        for line in lines:
-            if line.startswith("  "):
-                cleaned_lines.append(line[2:])
-            else:
-                cleaned_lines.append(line)
+    #     cleaned_lines = []
+    #     for line in lines:
+    #         if line.startswith("  "):
+    #             cleaned_lines.append(line[2:])
+    #         else:
+    #             cleaned_lines.append(line)
 
-        cleaned_text = "".join(cleaned_lines).replace("''", "")
+    #     cleaned_text = "".join(cleaned_lines).replace("''", "")
 
-        with open(filename, "w") as f:
-            f.write(cleaned_text)
+    #     with open(filename, "w") as f:
+    #         f.write(cleaned_text)
